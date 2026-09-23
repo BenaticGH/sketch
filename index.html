@@ -2,8 +2,18 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sketch Levels Processor Pro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sketchport</title>
+    
+    <!-- iOS PWA Support -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Sketchport">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    
+    <link rel="icon" href="faviconlight.png" media="(prefers-color-scheme: light)">
+    <link rel="icon" href="favicondark.png" media="(prefers-color-scheme: dark)">
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -11,30 +21,36 @@
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #0a0a0a; /* neutral-950 */
-            color: #e5e5e5; /* neutral-200 */
+            background-color: #0a0a0a;
+            color: #e5e5e5;
             margin: 0;
             overflow: hidden;
             user-select: none;
+            -webkit-user-select: none;
+            height: 100dvh; 
         }
 
-        /* Strict Neutral Grayscale Tailwind Config Overrides */
+        /* Strict grayscale utilities */
         .bg-white { background-color: #ffffff; }
         .bg-neutral-950 { background-color: #0a0a0a; }
         .bg-neutral-900 { background-color: #171717; }
         .bg-neutral-800 { background-color: #262626; }
-        .bg-neutral-700 { background-color: #404040; }
         .text-neutral-500 { color: #737373; }
         .text-neutral-400 { color: #a3a3a3; }
         .border-neutral-800 { border-color: #262626; }
         
-        /* Standard Range Slider */
+        /* Prevent browser scroll actions on interactive areas */
+        canvas, .dual-slider-container, input[type=range] {
+            touch-action: none;
+        }
+
+        /* Custom single slider */
         input[type=range].single-slider {
             -webkit-appearance: none; width: 100%; background: transparent;
         }
         input[type=range].single-slider::-webkit-slider-thumb {
-            -webkit-appearance: none; height: 14px; width: 14px; border-radius: 50%;
-            background: #fff; cursor: pointer; margin-top: -5px;
+            -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%;
+            background: #fff; cursor: pointer; margin-top: -7px;
             box-shadow: 0 0 0 1px #404040;
         }
         input[type=range].single-slider::-webkit-slider-runnable-track {
@@ -42,19 +58,19 @@
         }
         input[type=range]:focus { outline: none; }
 
-        /* Custom Dual Slider */
+        /* Custom dual slider */
         .dual-slider-container {
-            position: relative; height: 24px; width: 100%; touch-action: none; cursor: pointer;
+            position: relative; height: 32px; width: 100%; cursor: pointer;
         }
         .dual-slider-track {
-            position: absolute; top: 10px; left: 7px; right: 7px; height: 4px;
+            position: absolute; top: 14px; left: 8px; right: 8px; height: 4px;
             background: #262626; border-radius: 2px;
         }
         .dual-slider-fill {
-            position: absolute; top: 10px; height: 4px; background: #a3a3a3;
+            position: absolute; top: 14px; height: 4px; background: #a3a3a3;
         }
         .dual-slider-thumb {
-            position: absolute; top: 5px; width: 14px; height: 14px;
+            position: absolute; top: 7px; width: 18px; height: 18px;
             background: #fff; border-radius: 50%; box-shadow: 0 0 0 1px #404040;
             transform: translateX(-50%); cursor: grab; z-index: 10;
         }
@@ -67,44 +83,56 @@
         .tool-panel { display: none; }
         .tool-panel.active { display: flex; }
         
-        /* Dynamic Background for adjust tab */
         #canvasContainer { transition: background-color 0.2s ease; }
     </style>
 </head>
-<body class="flex flex-col md:flex-row h-screen w-screen">
+<body class="flex flex-col md:flex-row w-screen relative">
 
-    <aside class="w-full md:w-72 bg-neutral-900 flex flex-col h-full border-r border-neutral-800 z-20 shrink-0 shadow-xl">
+    <div id="queueOverlay" class="fixed inset-0 bg-black/60 z-40 hidden md:hidden transition-opacity opacity-0 backdrop-blur-sm"></div>
+
+    <aside id="queuePanel" class="fixed md:relative inset-y-0 left-0 w-72 bg-neutral-900 flex flex-col h-full border-r border-neutral-800 z-50 transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out shrink-0 shadow-2xl md:shadow-none">
+        <div class="flex items-center justify-between p-5 border-b border-neutral-800 md:hidden">
+            <h1 class="text-lg font-bold text-white">Sketchport</h1>
+            <button id="btnCloseQueue" class="text-neutral-400 p-2"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+        </div>
+        
         <div class="p-5 flex-1 overflow-y-auto no-scrollbar flex flex-col gap-4">
-            <h1 class="text-lg font-bold tracking-tight text-white mb-2">Process Queue</h1>
+            <h1 class="hidden md:block text-lg font-bold tracking-tight text-white mb-2">Process Queue</h1>
             
             <div class="bg-neutral-800/50 rounded-lg p-4 border border-neutral-700 border-dashed text-center shrink-0">
                 <input type="file" id="fileInput" multiple accept="image/*" class="hidden">
                 <button id="btnLoad" class="bg-neutral-200 hover:bg-white text-neutral-900 px-4 py-2 rounded font-semibold w-full transition text-sm">
                     + Import Images
                 </button>
-                <p class="text-[10px] text-neutral-500 mt-2 uppercase tracking-wide">Drag & Drop Supported</p>
             </div>
-
-            <div id="thumbnailList" class="flex flex-col gap-2 shrink-0 pb-4">
-                <!-- Thumbnails injected here -->
-            </div>
+            <div id="thumbnailList" class="flex flex-col gap-2 shrink-0 pb-4"></div>
         </div>
 
         <div class="p-5 border-t border-neutral-800 bg-neutral-900 shrink-0">
+            <label class="flex items-center gap-2 mb-4 cursor-pointer">
+                <input type="checkbox" id="chkTransparent" class="w-4 h-4 accent-neutral-500 rounded cursor-pointer">
+                <span class="text-xs text-neutral-300 font-medium">Transparent PNG</span>
+            </label>
             <button id="btnExport" disabled class="disabled:opacity-30 disabled:cursor-not-allowed bg-white hover:bg-neutral-300 text-neutral-950 px-4 py-3 rounded-lg font-bold w-full transition flex items-center justify-center gap-2 shadow-lg">
                 Export Processed
             </button>
         </div>
     </aside>
 
-    <main class="flex-1 flex flex-col relative bg-neutral-950 z-0">
-        <header class="h-12 border-b border-neutral-800 flex items-center justify-between px-6 bg-neutral-900/80 backdrop-blur z-10 shrink-0">
-            <div id="filenameDisplay" class="text-xs font-mono text-neutral-400 truncate max-w-md">No image selected</div>
-            <div id="counter" class="text-xs font-mono text-neutral-500">0 / 0</div>
+    <main class="flex-1 flex flex-col relative h-[55dvh] md:h-full z-0 min-w-0 bg-neutral-950">
+        <header class="h-12 border-b border-neutral-800 flex items-center px-4 bg-neutral-900 shrink-0 gap-3">
+            <button id="btnOpenQueue" class="md:hidden text-neutral-400 p-1">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+            </button>
+            <div class="font-bold text-sm text-white hidden md:block mr-4 border-r border-neutral-700 pr-4">Sketchport</div>
+            <div class="flex-1 overflow-hidden flex items-center justify-between">
+                <div id="filenameDisplay" class="text-xs font-mono text-neutral-400 truncate pr-4">No image</div>
+                <div id="counter" class="text-xs font-mono text-neutral-500 shrink-0">0 / 0</div>
+            </div>
         </header>
 
         <div class="flex-1 relative overflow-hidden bg-neutral-900" id="canvasContainer">
-            <canvas id="previewCanvas" class="absolute inset-0"></canvas>
+            <canvas id="previewCanvas" class="absolute inset-0 block"></canvas>
             
             <div id="emptyState" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none opacity-50">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mb-4 text-neutral-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -115,22 +143,32 @@
         </div>
     </main>
 
-    <aside id="toolsPanel" class="w-full md:w-80 bg-neutral-900 flex flex-col h-full border-l border-neutral-800 z-20 shrink-0 opacity-50 pointer-events-none transition-opacity">
-        <div class="flex p-2 gap-1 bg-neutral-950 border-b border-neutral-800 shrink-0">
-            <button class="tab-btn active flex-1 py-2 text-xs font-medium rounded text-neutral-400 hover:text-neutral-200 transition" data-tab="flatten">1. Flatten</button>
-            <button class="tab-btn flex-1 py-2 text-xs font-medium rounded text-neutral-400 hover:text-neutral-200 transition" data-tab="transform">2. Transform</button>
-            <button class="tab-btn flex-1 py-2 text-xs font-medium rounded text-neutral-400 hover:text-neutral-200 transition" data-tab="adjust">3. Adjust</button>
+    <aside id="toolsPanel" class="w-full md:w-80 h-[45dvh] md:h-full bg-neutral-900 flex flex-col border-t md:border-t-0 md:border-l border-neutral-800 z-20 shrink-0 opacity-50 pointer-events-none transition-opacity">
+        <div class="flex p-2 gap-1 bg-neutral-950 border-b border-neutral-800 shrink-0 overflow-x-auto no-scrollbar">
+            <button class="tab-btn active flex-1 whitespace-nowrap px-3 py-2 text-xs font-medium rounded text-neutral-400 hover:text-neutral-200 transition" data-tab="flatten">1. Flatten</button>
+            <button class="tab-btn flex-1 whitespace-nowrap px-3 py-2 text-xs font-medium rounded text-neutral-400 hover:text-neutral-200 transition" data-tab="transform">2. Transform</button>
+            <button class="tab-btn flex-1 whitespace-nowrap px-3 py-2 text-xs font-medium rounded text-neutral-400 hover:text-neutral-200 transition" data-tab="adjust">3. Adjust</button>
         </div>
 
         <div class="p-5 flex-1 overflow-y-auto no-scrollbar relative">
             
-            <!-- Flatten Tab -->
             <div id="tab-flatten" class="tool-panel active flex-col gap-6">
                 <div>
-                    <h2 class="text-xs font-bold text-neutral-300 uppercase tracking-widest mb-4">Perspective Warp</h2>
-                    <p class="text-xs text-neutral-500 mb-4 leading-relaxed">Drag the 4 corner nodes to match the physical page edges.</p>
+                    <h2 class="text-xs font-bold text-neutral-300 uppercase tracking-widest mb-2">Perspective Warp</h2>
+                    <p class="text-[10px] text-neutral-500 mb-4 leading-relaxed">Drag nodes at image corners. Auto-skipped if untouched.</p>
                     
-                    <div class="flex gap-4 mb-4">
+                    <div class="flex bg-neutral-950 p-1 rounded-md mb-4 border border-neutral-800">
+                        <label class="flex-1 text-center cursor-pointer">
+                            <input type="radio" name="sizingMode" value="auto" class="peer hidden" checked>
+                            <div class="text-xs py-1.5 rounded peer-checked:bg-neutral-800 peer-checked:text-white text-neutral-500 transition font-medium">Auto Size</div>
+                        </label>
+                        <label class="flex-1 text-center cursor-pointer">
+                            <input type="radio" name="sizingMode" value="custom" class="peer hidden">
+                            <div class="text-xs py-1.5 rounded peer-checked:bg-neutral-800 peer-checked:text-white text-neutral-500 transition font-medium">Custom Size</div>
+                        </label>
+                    </div>
+
+                    <div id="customSizeInputs" class="flex gap-4 mb-4 hidden">
                         <div class="flex-1">
                             <label class="text-[10px] text-neutral-500 uppercase">Ratio Width</label>
                             <input type="number" id="ratioW" value="8.5" step="0.1" class="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-sm text-white focus:border-neutral-500 outline-none mt-1">
@@ -140,14 +178,13 @@
                             <input type="number" id="ratioH" value="11" step="0.1" class="w-full bg-neutral-950 border border-neutral-800 rounded p-2 text-sm text-white focus:border-neutral-500 outline-none mt-1">
                         </div>
                     </div>
-                    <button id="btnResetNodes" class="w-full bg-neutral-800 hover:bg-neutral-700 text-xs text-white py-2 rounded transition border border-neutral-700">Reset Corners</button>
+                    <button id="btnResetNodes" class="w-full bg-neutral-800 hover:bg-neutral-700 text-xs text-white py-2 rounded transition border border-neutral-700">Reset Nodes</button>
                 </div>
             </div>
 
-            <!-- Transform Tab -->
             <div id="tab-transform" class="tool-panel flex-col gap-8">
                 <div>
-                    <h2 class="text-xs font-bold text-neutral-300 uppercase tracking-widest mb-4">Rotation</h2>
+                    <h2 class="text-xs font-bold text-neutral-300 uppercase tracking-widest mb-3">Rotation</h2>
                     <div class="flex gap-2 mb-4">
                         <button id="btnRotL" class="flex-1 bg-neutral-800 hover:bg-neutral-700 text-xs text-white py-2 rounded transition border border-neutral-700">-90°</button>
                         <button id="btnRotR" class="flex-1 bg-neutral-800 hover:bg-neutral-700 text-xs text-white py-2 rounded transition border border-neutral-700">+90°</button>
@@ -158,10 +195,10 @@
                     </div>
                 </div>
 
-                <div class="border-t border-neutral-800 pt-6">
-                    <h2 class="text-xs font-bold text-neutral-300 uppercase tracking-widest mb-4">Trim Edges</h2>
+                <div class="border-t border-neutral-800 pt-5">
+                    <h2 class="text-xs font-bold text-neutral-300 uppercase tracking-widest mb-3">Trim Edges</h2>
                     <div class="mb-5">
-                        <div class="flex justify-between text-xs mb-1 text-neutral-400"><span>Left / Right Trim</span></div>
+                        <div class="flex justify-between text-[10px] mb-1 text-neutral-400"><span>Left / Right Trim</span></div>
                         <div class="dual-slider-container" id="sliderTrimX">
                             <div class="dual-slider-track"></div>
                             <div class="dual-slider-fill" id="fillTrimX"></div>
@@ -170,7 +207,7 @@
                         </div>
                     </div>
                     <div>
-                        <div class="flex justify-between text-xs mb-1 text-neutral-400"><span>Top / Bottom Trim</span></div>
+                        <div class="flex justify-between text-[10px] mb-1 text-neutral-400"><span>Top / Bottom Trim</span></div>
                         <div class="dual-slider-container" id="sliderTrimY">
                             <div class="dual-slider-track"></div>
                             <div class="dual-slider-fill" id="fillTrimY"></div>
@@ -181,10 +218,9 @@
                 </div>
             </div>
 
-            <!-- Adjust Tab -->
-            <div id="tab-adjust" class="tool-panel flex-col gap-8">
+            <div id="tab-adjust" class="tool-panel flex-col gap-6">
                 <div>
-                    <h2 class="text-xs font-bold text-neutral-300 uppercase tracking-widest mb-4">Levels</h2>
+                    <h2 class="text-xs font-bold text-neutral-300 uppercase tracking-widest mb-4">Levels & Color</h2>
                     <div class="mb-4">
                         <div class="flex justify-between text-xs mb-2 text-neutral-400"><span>White Threshold</span><span id="valWp">255</span></div>
                         <input type="range" id="sliderWp" min="100" max="255" value="255" class="single-slider">
@@ -193,29 +229,32 @@
                         <div class="flex justify-between text-xs mb-2 text-neutral-400"><span>Brightness / Mid</span><span id="valMid">1.00</span></div>
                         <input type="range" id="sliderMid" min="-100" max="100" value="0" class="single-slider">
                     </div>
-                    <div>
+                    <div class="mb-4">
                         <div class="flex justify-between text-xs mb-2 text-neutral-400"><span>Black Point</span><span id="valBp">0</span></div>
                         <input type="range" id="sliderBp" min="0" max="150" value="0" class="single-slider">
                     </div>
+                    <div>
+                        <div class="flex justify-between text-xs mb-2 text-neutral-400"><span>Saturation</span><span id="valSat">0</span></div>
+                        <input type="range" id="sliderSat" min="-100" max="100" value="0" class="single-slider">
+                    </div>
                 </div>
 
-                <div class="border-t border-neutral-800 pt-6">
-                    <div class="flex justify-between items-center mb-4">
+                <div class="border-t border-neutral-800 pt-5">
+                    <div class="flex justify-between items-center mb-3">
                         <h2 class="text-xs font-bold text-neutral-300 uppercase tracking-widest">White Brush</h2>
                         <button id="btnClearBrush" class="text-[10px] bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-2 py-1 rounded text-neutral-300">Clear</button>
                     </div>
-                    <p class="text-xs text-neutral-500 mb-4 leading-relaxed">Paint to force areas to pure white. Size is relative to page width.</p>
+                    <p class="text-[10px] text-neutral-500 mb-3 leading-relaxed">Paint over shadows to force pure white.</p>
                     <div>
                         <div class="flex justify-between text-xs mb-2 text-neutral-400"><span>Size</span><span id="valBrush">4%</span></div>
                         <input type="range" id="sliderBrush" min="0.5" max="20" step="0.5" value="4" class="single-slider">
                     </div>
                 </div>
             </div>
-
         </div>
     </aside>
 
-    <div id="processingOverlay" class="fixed inset-0 bg-neutral-950/95 backdrop-blur z-50 flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300">
+    <div id="processingOverlay" class="fixed inset-0 bg-neutral-950/95 backdrop-blur z-[100] flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300">
         <div class="flex flex-col items-center">
             <svg class="animate-spin h-10 w-10 text-white mb-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -228,18 +267,23 @@
         </div>
     </div>
     
-    <div id="dragOverlay" class="fixed inset-0 bg-neutral-900/90 backdrop-blur z-50 flex items-center justify-center opacity-0 pointer-events-none border-2 border-dashed border-neutral-400 m-4 rounded-2xl transition-opacity">
+    <div id="dragOverlay" class="fixed inset-0 bg-neutral-900/90 backdrop-blur z-[100] flex items-center justify-center opacity-0 pointer-events-none border-2 border-dashed border-neutral-400 m-4 rounded-2xl transition-opacity">
         <p class="text-2xl font-bold text-neutral-200">Drop files to import</p>
     </div>
 
+    <a href="https://apps.muetzdesign.com" target="_blank" rel="noopener noreferrer" class="group fixed bottom-4 right-4 z-50 flex flex-col items-end">
+        <span class="absolute bottom-full right-0 mb-2 bg-neutral-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap transition-opacity shadow-lg">More Apps</span>
+        <img src="more-apps-icon.png" alt="More Apps" class="w-10 h-10 object-contain opacity-70 group-hover:opacity-100 transition-opacity drop-shadow-md cursor-pointer">
+    </a>
+
     <script>
-        const PROXY_MAX_SIZE = 1200; // Increased slightly for better preview clarity
+        const PROXY_MAX_SIZE = 1200; 
         
         const state = {
             images: [],
             currentIndex: -1,
             activeTab: 'flatten',
-            brushSizePct: 4, // Normalized size %
+            brushSizePct: 4, 
             renderCtx: { dx: 0, dy: 0, scale: 1, cw: 0, ch: 0 },
             isDraggingNode: -1,
             isBrushing: false,
@@ -248,14 +292,32 @@
 
         const DOM = {
             preview: document.getElementById('previewCanvas'),
-            ctx: document.getElementById('previewCanvas').getContext('2d'),
+            ctx: document.getElementById('previewCanvas').getContext('2d', { willReadFrequently: true }),
             container: document.getElementById('canvasContainer'),
             tabs: document.querySelectorAll('.tab-btn'),
             panels: document.querySelectorAll('.tool-panel'),
             toolsPanel: document.getElementById('toolsPanel')
         };
 
-        // Homography Math (Gauss-Jordan Elimination)
+        const qPanel = document.getElementById('queuePanel');
+        const qOverlay = document.getElementById('queueOverlay');
+        
+        function toggleQueue() {
+            const isClosed = qPanel.classList.contains('-translate-x-full');
+            if (isClosed) {
+                qPanel.classList.remove('-translate-x-full');
+                qOverlay.classList.remove('hidden', 'opacity-0');
+            } else {
+                qPanel.classList.add('-translate-x-full');
+                qOverlay.classList.add('opacity-0');
+                setTimeout(() => qOverlay.classList.add('hidden'), 300);
+            }
+        }
+        document.getElementById('btnOpenQueue').addEventListener('click', toggleQueue);
+        document.getElementById('btnCloseQueue').addEventListener('click', toggleQueue);
+        qOverlay.addEventListener('click', toggleQueue);
+
+        // Gaussian Elimination for Homography
         function solveLinearSystem(A, B) {
             let n = B.length;
             for (let i = 0; i < n; i++) {
@@ -297,9 +359,7 @@
             const src = new Uint32Array(srcImageData.data.buffer);
             const dst = new Uint32Array(destImageData.data.buffer);
             const srcW = srcImageData.width, srcH = srcImageData.height;
-            
-            // Prefill with white (#FFFFFFFF in little-endian ABGR)
-            dst.fill(0xFFFFFFFF); 
+            dst.fill(0xFFFFFFFF); // Pure white fill
             
             let i = 0;
             for (let y = 0; y < destHeight; y++) {
@@ -307,7 +367,6 @@
                     let w = H[6]*x + H[7]*y + H[8];
                     let u = (H[0]*x + H[1]*y + H[2]) / w;
                     let v = (H[3]*x + H[4]*y + H[5]) / w;
-                    
                     let srcX = Math.round(u);
                     let srcY = Math.round(v);
                     
@@ -320,7 +379,7 @@
             return destImageData;
         }
 
-        function applyLevels(imgData, bp, mid, wp) {
+        function applyAdjustments(imgData, bp, mid, wp, sat) {
             const lut = new Uint8Array(256);
             let sBp = Math.min(253, Math.max(0, bp));
             let sWp = Math.min(255, Math.max(2, wp));
@@ -334,10 +393,30 @@
             }
             
             const data = imgData.data;
+            const satMult = 1 + (sat / 100);
+            
             for (let i = 0; i < data.length; i += 4) {
-                data[i] = lut[data[i]]; data[i+1] = lut[data[i+1]]; data[i+2] = lut[data[i+2]];
+                let r = lut[data[i]], g = lut[data[i+1]], b = lut[data[i+2]];
+                if (sat !== 0) {
+                    const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+                    r = luma + (r - luma) * satMult;
+                    g = luma + (g - luma) * satMult;
+                    b = luma + (b - luma) * satMult;
+                    data[i] = Math.min(255, Math.max(0, r));
+                    data[i+1] = Math.min(255, Math.max(0, g));
+                    data[i+2] = Math.min(255, Math.max(0, b));
+                } else {
+                    data[i] = r; data[i+1] = g; data[i+2] = b;
+                }
             }
             return imgData;
+        }
+
+        function calculateRotatedBounds(w, h, angleDeg) {
+            const rad = angleDeg * Math.PI / 180;
+            const cos = Math.abs(Math.cos(rad));
+            const sin = Math.abs(Math.sin(rad));
+            return { w: Math.round(w * cos + h * sin), h: Math.round(w * sin + h * cos) };
         }
 
         function createInitialState(file, originalImage) {
@@ -351,50 +430,61 @@
             pCtx.fillStyle = 'white'; pCtx.fillRect(0,0,pW,pH);
             pCtx.drawImage(originalImage, 0, 0, pW, pH);
 
+            const isLandscape = w >= h;
+
             return {
                 file, name: file.name, origW: w, origH: h,
                 originalImage, proxyCanvas, proxyScale: scale,
                 nodes: [{x:0, y:0}, {x:1, y:0}, {x:1, y:1}, {x:0, y:1}],
-                ratioW: 8.5, ratioH: 11,
+                nodesMoved: false, 
+                autoSize: true,
+                ratioW: isLandscape ? 11 : 8.5, 
+                ratioH: isLandscape ? 8.5 : 11,
                 warpedProxyData: null, warpedW: 0, warpedH: 0,
                 rot90: 0, rotAngle: 0,
                 trimL: 0, trimR: 100, trimT: 0, trimB: 100,
-                bp: 0, mid: 0, wp: 255,
-                brushStrokes: [] // Array of { normSize, pts: [{nx, ny}] }
+                bp: 0, mid: 0, wp: 255, sat: 0,
+                brushStrokes: [] 
             };
         }
 
         function updateWarpedProxy(imgState) {
             const pW = imgState.proxyCanvas.width;
             const pH = imgState.proxyCanvas.height;
+            const srcCtx = imgState.proxyCanvas.getContext('2d');
+            
+            if (!imgState.nodesMoved) {
+                imgState.warpedProxyData = srcCtx.getImageData(0, 0, pW, pH);
+                imgState.warpedW = pW;
+                imgState.warpedH = pH;
+                return;
+            }
+
             const srcQuad = imgState.nodes.map(n => ({ x: n.x * pW, y: n.y * pH }));
             
-            const d1 = Math.hypot(srcQuad[0].x - srcQuad[1].x, srcQuad[0].y - srcQuad[1].y);
-            const d2 = Math.hypot(srcQuad[1].x - srcQuad[2].x, srcQuad[1].y - srcQuad[2].y);
-            const maxDim = Math.max(d1, d2);
-            
             let outW, outH;
-            if (imgState.ratioW > imgState.ratioH) { outW = maxDim; outH = outW * (imgState.ratioH / imgState.ratioW); }
-            else { outH = maxDim; outW = outH * (imgState.ratioW / imgState.ratioH); }
+            if (imgState.autoSize) {
+                const w1 = Math.hypot(srcQuad[0].x - srcQuad[1].x, srcQuad[0].y - srcQuad[1].y);
+                const w2 = Math.hypot(srcQuad[2].x - srcQuad[3].x, srcQuad[2].y - srcQuad[3].y);
+                const h1 = Math.hypot(srcQuad[1].x - srcQuad[2].x, srcQuad[1].y - srcQuad[2].y);
+                const h2 = Math.hypot(srcQuad[3].x - srcQuad[0].x, srcQuad[3].y - srcQuad[0].y);
+                outW = Math.max(w1, w2); outH = Math.max(h1, h2);
+            } else {
+                const d1 = Math.hypot(srcQuad[0].x - srcQuad[1].x, srcQuad[0].y - srcQuad[1].y);
+                const d2 = Math.hypot(srcQuad[1].x - srcQuad[2].x, srcQuad[1].y - srcQuad[2].y);
+                const maxDim = Math.max(d1, d2);
+                if (imgState.ratioW > imgState.ratioH) { outW = maxDim; outH = outW * (imgState.ratioH / imgState.ratioW); }
+                else { outH = maxDim; outW = outH * (imgState.ratioW / imgState.ratioH); }
+            }
             
             outW = Math.max(1, Math.round(outW)); outH = Math.max(1, Math.round(outH));
             const dstRect = [{x:0, y:0}, {x:outW, y:0}, {x:outW, y:outH}, {x:0, y:outH}];
             const H = getHomography(srcQuad, dstRect);
             
-            const srcData = imgState.proxyCanvas.getContext('2d').getImageData(0, 0, pW, pH);
+            const srcData = srcCtx.getImageData(0, 0, pW, pH);
             imgState.warpedProxyData = applyWarp(srcData, outW, outH, H);
             imgState.warpedW = outW;
             imgState.warpedH = outH;
-        }
-
-        function calculateRotatedBounds(w, h, angleDeg) {
-            const rad = angleDeg * Math.PI / 180;
-            const cos = Math.abs(Math.cos(rad));
-            const sin = Math.abs(Math.sin(rad));
-            return {
-                w: Math.round(w * cos + h * sin),
-                h: Math.round(w * sin + h * cos)
-            };
         }
 
         function requestRender() { requestAnimationFrame(render); }
@@ -408,7 +498,6 @@
             cvs.width = DOM.container.clientWidth; cvs.height = DOM.container.clientHeight;
             ctx.clearRect(0, 0, cvs.width, cvs.height);
 
-            // Dynamic background handling
             if (state.activeTab === 'adjust') {
                 DOM.container.classList.remove('bg-neutral-900');
                 DOM.container.classList.add('bg-white');
@@ -430,197 +519,217 @@
 
         function renderFlattenMode(img, ctx, cw, ch) {
             const pW = img.proxyCanvas.width, pH = img.proxyCanvas.height;
-            const pad = 40;
-            const scale = Math.min((cw - pad)/pW, (ch - pad)/pH);
+            const pad = Math.min(cw, ch) * 0.1;
+            const scale = Math.min((cw - pad*2)/pW, (ch - pad*2)/pH);
             const dx = (cw - pW * scale) / 2, dy = (ch - pH * scale) / 2;
             
             state.renderCtx = { scale, dx, dy, w: pW, h: pH };
 
-            ctx.save(); ctx.translate(dx, dy); ctx.scale(scale, scale);
+            ctx.save(); 
+            ctx.translate(dx, dy); 
+            ctx.scale(scale, scale);
             ctx.globalAlpha = 1.0;
             ctx.drawImage(img.proxyCanvas, 0, 0);
+            
+            const n = img.nodes;
+            const R = 12 / scale; 
 
-            // Draw Quadrilateral outlines without fill
+            // Dashed lines
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.lineWidth = 1.5 / scale;
+            ctx.setLineDash([6 / scale, 6 / scale]);
             ctx.beginPath();
-            img.nodes.forEach((n, i) => {
-                const px = n.x * pW, py = n.y * pH;
-                i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-            });
-            ctx.closePath();
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)'; ctx.lineWidth = 2 / scale; ctx.stroke();
-            ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)'; ctx.lineWidth = 4 / scale; ctx.stroke();
+            
+            for(let i = 0; i < 4; i++) {
+                const p1 = n[i], p2 = n[(i+1)%4];
+                const x1 = p1.x * pW, y1 = p1.y * pH;
+                const x2 = p2.x * pW, y2 = p2.y * pH;
+                
+                const vx = x2 - x1, vy = y2 - y1;
+                const dist = Math.hypot(vx, vy);
+                
+                if (dist > R * 2) {
+                    const startX = x1 + (vx/dist) * R;
+                    const startY = y1 + (vy/dist) * R;
+                    const endX = x2 - (vx/dist) * R;
+                    const endY = y2 - (vy/dist) * R;
+                    ctx.moveTo(startX, startY); ctx.lineTo(endX, endY);
+                }
+            }
+            ctx.stroke(); ctx.setLineDash([]); 
 
-            // Nodes
-            img.nodes.forEach((n, i) => {
-                ctx.beginPath();
-                ctx.arc(n.x * pW, n.y * pH, 8 / scale, 0, Math.PI * 2);
-                ctx.fillStyle = state.isDraggingNode === i ? '#a3a3a3' : '#ffffff';
-                ctx.fill();
-                ctx.lineWidth = 1/scale; ctx.strokeStyle = '#000'; ctx.stroke();
+            // Nodes (transparent center)
+            ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
+            n.forEach(node => {
+                const nx = node.x * pW, ny = node.y * pH;
+                ctx.beginPath(); ctx.arc(nx, ny, R + (1.5/scale), 0, Math.PI * 2);
+                ctx.lineWidth = 3 / scale; ctx.strokeStyle = '#000000'; ctx.stroke();
+                
+                ctx.beginPath(); ctx.arc(nx, ny, R, 0, Math.PI * 2);
+                ctx.lineWidth = 2 / scale; ctx.strokeStyle = '#ffffff'; ctx.stroke();
             });
-            ctx.restore();
-            cvsCursor('crosshair');
+            ctx.restore(); 
+            
+            // Magnifying Loupe
+            if (state.isDraggingNode >= 0) {
+                const node = n[state.isDraggingNode];
+                const nx = node.x * pW, ny = node.y * pH;
+                const screenNodeX = dx + nx * scale, screenNodeY = dy + ny * scale;
+                let loupeX = screenNodeX - 90, loupeY = screenNodeY - 90;
+                const loupeRadius = 60;
+                
+                if (loupeX - loupeRadius < 0) loupeX = screenNodeX + 90;
+                if (loupeY - loupeRadius < 0) loupeY = screenNodeY + 90;
+                if (loupeX + loupeRadius > cw) loupeX = screenNodeX - 90;
+                
+                ctx.save();
+                ctx.beginPath(); ctx.arc(loupeX, loupeY, loupeRadius, 0, Math.PI * 2);
+                ctx.fillStyle = '#0a0a0a'; ctx.fill();
+                ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 10;
+                ctx.lineWidth = 4; ctx.strokeStyle = '#ffffff'; ctx.stroke();
+                
+                ctx.shadowColor = 'transparent'; ctx.clip();
+                const zoom = 2.5; const drawScale = scale * zoom;
+                const drawX = loupeX - nx * drawScale; const drawY = loupeY - ny * drawScale;
+                
+                ctx.drawImage(img.proxyCanvas, drawX, drawY, pW * drawScale, pH * drawScale);
+                
+                ctx.beginPath();
+                ctx.moveTo(loupeX - 10, loupeY); ctx.lineTo(loupeX + 10, loupeY);
+                ctx.moveTo(loupeX, loupeY - 10); ctx.lineTo(loupeX, loupeY + 10);
+                ctx.lineWidth = 1.5; ctx.strokeStyle = '#ffffff';
+                ctx.shadowColor = '#000000'; ctx.shadowBlur = 2; ctx.stroke();
+                ctx.restore();
+            }
+            DOM.preview.style.cursor = 'crosshair';
         }
 
         function renderWorkspaceMode(img, ctx, cw, ch) {
-            // 1. Calculate Full Rotated Dimensions
             const totalAngle = img.rot90 + img.rotAngle;
             const wsBounds = calculateRotatedBounds(img.warpedW, img.warpedH, totalAngle);
             const wsW = wsBounds.w, wsH = wsBounds.h;
             
-            // 2. Create Workspace Canvas
-            const wsCvs = document.createElement('canvas');
-            wsCvs.width = wsW; wsCvs.height = wsH;
+            const wsCvs = document.createElement('canvas'); wsCvs.width = wsW; wsCvs.height = wsH;
             const wsCtx = wsCvs.getContext('2d');
+            wsCtx.fillStyle = '#ffffff'; wsCtx.fillRect(0, 0, wsW, wsH); 
             
-            // MUST Fill with pure white to avoid black corners
-            wsCtx.fillStyle = '#ffffff';
-            wsCtx.fillRect(0, 0, wsW, wsH);
-            
-            // 3. Draw Rotated Warped Image
             wsCtx.translate(wsW/2, wsH/2);
             wsCtx.rotate(totalAngle * Math.PI / 180);
             
-            const tmpCvs = document.createElement('canvas');
-            tmpCvs.width = img.warpedW; tmpCvs.height = img.warpedH;
-            const dataCopy = new ImageData(
-                new Uint8ClampedArray(img.warpedProxyData.data), 
-                img.warpedW, img.warpedH
-            );
-            const leveledData = applyLevels(dataCopy, img.bp, img.mid, img.wp);
-            tmpCvs.getContext('2d').putImageData(leveledData, 0, 0);
+            const tmpCvs = document.createElement('canvas'); tmpCvs.width = img.warpedW; tmpCvs.height = img.warpedH;
+            const dataCopy = new ImageData(new Uint8ClampedArray(img.warpedProxyData.data), img.warpedW, img.warpedH);
+            const adjustedData = applyAdjustments(dataCopy, img.bp, img.mid, img.wp, img.sat);
+            tmpCvs.getContext('2d').putImageData(adjustedData, 0, 0);
             
             wsCtx.drawImage(tmpCvs, -img.warpedW/2, -img.warpedH/2);
             wsCtx.resetTransform();
 
-            // 4. Apply Brush Strokes using Normalized Coordinates
             wsCtx.lineCap = 'round'; wsCtx.lineJoin = 'round'; wsCtx.strokeStyle = '#ffffff';
             img.brushStrokes.forEach(stroke => {
                 if (stroke.pts.length === 0) return;
                 wsCtx.lineWidth = (stroke.normSize / 100) * wsW;
                 wsCtx.beginPath();
                 wsCtx.moveTo(stroke.pts[0].nx * wsW, stroke.pts[0].ny * wsH);
-                for(let i=1; i<stroke.pts.length; i++) {
-                    wsCtx.lineTo(stroke.pts[i].nx * wsW, stroke.pts[i].ny * wsH);
-                }
+                for(let i=1; i<stroke.pts.length; i++) wsCtx.lineTo(stroke.pts[i].nx * wsW, stroke.pts[i].ny * wsH);
                 wsCtx.stroke();
             });
 
-            // 5. Calculate Trim Rect
-            const tx = wsW * (img.trimL / 100);
-            const ty = wsH * (img.trimT / 100);
-            const tw = wsW * ((img.trimR - img.trimL) / 100);
-            const th = wsH * ((img.trimB - img.trimT) / 100);
+            const tx = wsW * (img.trimL / 100), ty = wsH * (img.trimT / 100);
+            const tw = wsW * ((img.trimR - img.trimL) / 100), th = wsH * ((img.trimB - img.trimT) / 100);
 
-            // 6. Draw to Main Canvas (Fit to Trim Rect)
-            const pad = 40;
-            const scale = Math.min((cw - pad)/tw, (ch - pad)/th);
+            const pad = Math.min(cw, ch) * 0.1;
+            const scale = Math.min((cw - pad*2)/tw, (ch - pad*2)/th);
             const dx = (cw - tw * scale) / 2, dy = (ch - th * scale) / 2;
             
             state.renderCtx = { scale, dx, dy, tx, ty, tw, th, wsW, wsH };
 
             ctx.save();
             ctx.translate(dx, dy); ctx.scale(scale, scale);
+            ctx.drawImage(wsCvs, tx, ty, tw, th, 0, 0, tw, th);
             
-            // Add a subtle shadow so user can see bounds against the white bg in Adjust tab
             if(state.activeTab === 'adjust') {
-                ctx.shadowColor = 'rgba(0,0,0,0.1)'; ctx.shadowBlur = 20;
+                ctx.strokeStyle = '#525252'; ctx.lineWidth = 1 / scale; const mLen = 20 / scale; 
+                ctx.beginPath(); ctx.moveTo(0, mLen); ctx.lineTo(0, 0); ctx.lineTo(mLen, 0); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(tw - mLen, 0); ctx.lineTo(tw, 0); ctx.lineTo(tw, mLen); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(tw, th - mLen); ctx.lineTo(tw, th); ctx.lineTo(tw - mLen, th); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(0, th - mLen); ctx.lineTo(0, th); ctx.lineTo(mLen, th); ctx.stroke();
             }
             
-            // Draw trimmed portion
-            ctx.drawImage(wsCvs, tx, ty, tw, th, 0, 0, tw, th);
-            ctx.shadowColor = 'transparent';
-            
             if (state.activeTab === 'transform') {
-                // Dim effect to show cropped areas
                 ctx.restore(); ctx.save();
                 ctx.translate(dx - tx*scale, dy - ty*scale); ctx.scale(scale, scale);
-                ctx.globalAlpha = 0.3;
-                ctx.drawImage(wsCvs, 0, 0);
+                ctx.globalAlpha = 0.3; ctx.drawImage(wsCvs, 0, 0);
                 
-                // Crop overlay box
-                ctx.globalAlpha = 1.0;
-                ctx.strokeStyle = '#3b82f6'; // Bright blue just for crop box visibility
-                ctx.lineWidth = 2/scale;
+                ctx.globalAlpha = 1.0; ctx.strokeStyle = '#737373'; ctx.lineWidth = 2/scale;
                 ctx.strokeRect(tx, ty, tw, th);
             }
             ctx.restore();
 
-            // Set dynamic cursor
             if (state.activeTab === 'adjust') {
-                // visual pixel size of brush on screen
                 const pxSize = ((state.brushSizePct / 100) * wsW) * scale;
-                cvsCursor(`url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${pxSize}" height="${pxSize}"><circle cx="${pxSize/2}" cy="${pxSize/2}" r="${Math.max(1, pxSize/2 - 1)}" fill="none" stroke="gray" stroke-width="1"/></svg>') ${pxSize/2} ${pxSize/2}, crosshair`);
-            } else {
-                cvsCursor('default');
-            }
+                DOM.preview.style.cursor = `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${pxSize}" height="${pxSize}"><circle cx="${pxSize/2}" cy="${pxSize/2}" r="${Math.max(1, pxSize/2 - 1)}" fill="none" stroke="gray" stroke-width="1"/></svg>') ${pxSize/2} ${pxSize/2}, crosshair`;
+            } else { DOM.preview.style.cursor = 'default'; }
         }
 
-        function cvsCursor(c) { DOM.preview.style.cursor = c; }
-
-        function getMousePos(e) {
+        function getPointerPos(e) {
             const rect = DOM.preview.getBoundingClientRect();
             return { x: e.clientX - rect.left, y: e.clientY - rect.top };
         }
 
-        DOM.preview.addEventListener('mousedown', (e) => {
+        DOM.preview.addEventListener('pointerdown', (e) => {
             if (state.currentIndex < 0) return;
-            const img = state.images[state.currentIndex];
-            const m = getMousePos(e);
-            const rc = state.renderCtx;
+            DOM.preview.setPointerCapture(e.pointerId);
+            const img = state.images[state.currentIndex], m = getPointerPos(e), rc = state.renderCtx;
 
             if (state.activeTab === 'flatten') {
-                const nx = (m.x - rc.dx) / rc.scale / rc.w;
-                const ny = (m.y - rc.dy) / rc.scale / rc.h;
-                const hr = 20 / rc.scale / Math.max(rc.w, rc.h); // hit radius
+                const nx = (m.x - rc.dx) / rc.scale / rc.w, ny = (m.y - rc.dy) / rc.scale / rc.h;
+                const hr = 50 / rc.scale / Math.max(rc.w, rc.h); 
                 state.isDraggingNode = img.nodes.findIndex(n => Math.hypot(n.x - nx, n.y - ny) < hr);
+                if (state.isDraggingNode >= 0) requestRender();
             } 
             else if (state.activeTab === 'adjust') {
                 state.isBrushing = true;
-                const normX = ((m.x - rc.dx) / rc.scale + rc.tx) / rc.wsW;
-                const normY = ((m.y - rc.dy) / rc.scale + rc.ty) / rc.wsH;
+                const normX = ((m.x - rc.dx) / rc.scale + rc.tx) / rc.wsW, normY = ((m.y - rc.dy) / rc.scale + rc.ty) / rc.wsH;
                 img.brushStrokes.push({ normSize: state.brushSizePct, pts: [{nx: normX, ny: normY}] });
                 requestRender();
             }
         });
 
-        window.addEventListener('mousemove', (e) => {
+        DOM.preview.addEventListener('pointermove', (e) => {
             if (state.currentIndex < 0) return;
-            const img = state.images[state.currentIndex];
-            const m = getMousePos(e);
-            const rc = state.renderCtx;
+            const img = state.images[state.currentIndex], m = getPointerPos(e), rc = state.renderCtx;
 
             if (state.activeTab === 'flatten' && state.isDraggingNode >= 0) {
-                let nx = (m.x - rc.dx) / rc.scale / rc.w;
-                let ny = (m.y - rc.dy) / rc.scale / rc.h;
-                img.nodes[state.isDraggingNode] = { x: Math.max(0, Math.min(1, nx)), y: Math.max(0, Math.min(1, ny)) };
-                state.needsProxyWarpUpdate = true;
-                requestRender();
+                img.nodes[state.isDraggingNode] = { 
+                    x: Math.max(0, Math.min(1, (m.x - rc.dx) / rc.scale / rc.w)), 
+                    y: Math.max(0, Math.min(1, (m.y - rc.dy) / rc.scale / rc.h)) 
+                };
+                img.nodesMoved = true; state.needsProxyWarpUpdate = true; requestRender();
             }
             else if (state.activeTab === 'adjust' && state.isBrushing) {
-                const normX = ((m.x - rc.dx) / rc.scale + rc.tx) / rc.wsW;
-                const normY = ((m.y - rc.dy) / rc.scale + rc.ty) / rc.wsH;
                 const stroke = img.brushStrokes[img.brushStrokes.length - 1];
-                stroke.pts.push({nx: normX, ny: normY});
+                stroke.pts.push({nx: ((m.x - rc.dx) / rc.scale + rc.tx) / rc.wsW, ny: ((m.y - rc.dy) / rc.scale + rc.ty) / rc.wsH});
                 requestRender();
             }
         });
 
-        window.addEventListener('mouseup', () => { state.isDraggingNode = -1; state.isBrushing = false; });
+        DOM.preview.addEventListener('pointerup', (e) => {
+            DOM.preview.releasePointerCapture(e.pointerId);
+            const wasDragging = state.isDraggingNode >= 0;
+            state.isDraggingNode = -1; state.isBrushing = false;
+            if (wasDragging) requestRender(); 
+        });
+        
         window.addEventListener('resize', requestRender);
 
         function setupDualSlider(id, isX, prop1, prop2, thumb1, thumb2) {
             const container = document.getElementById(id);
-            const t1 = document.getElementById(thumb1);
-            const t2 = document.getElementById(thumb2);
-            const fill = document.getElementById(`fill${isX ? 'TrimX' : 'TrimY'}`);
-            
+            const t1 = document.getElementById(thumb1), t2 = document.getElementById(thumb2), fill = document.getElementById(`fill${isX ? 'TrimX' : 'TrimY'}`);
             let activeThumb = null;
 
             function updateUI() {
                 if(state.currentIndex < 0) return;
-                const img = state.images[state.currentIndex];
-                const v1 = img[prop1], v2 = img[prop2];
+                const img = state.images[state.currentIndex], v1 = img[prop1], v2 = img[prop2];
                 t1.style.left = `${v1}%`; t2.style.left = `${v2}%`;
                 fill.style.left = `${v1}%`; fill.style.width = `${v2 - v1}%`;
             }
@@ -629,18 +738,23 @@
                 if (!activeThumb || state.currentIndex < 0) return;
                 const rect = container.getBoundingClientRect();
                 let pct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-                
                 const img = state.images[state.currentIndex];
-                if (activeThumb === t1) { img[prop1] = Math.min(pct, img[prop2] - 1); }
-                else { img[prop2] = Math.max(pct, img[prop1] + 1); }
-                
+                if (activeThumb === t1) img[prop1] = Math.min(pct, img[prop2] - 1);
+                else img[prop2] = Math.max(pct, img[prop1] + 1);
                 updateUI(); requestRender();
             }
 
-            t1.addEventListener('mousedown', (e) => { activeThumb = t1; e.stopPropagation(); });
-            t2.addEventListener('mousedown', (e) => { activeThumb = t2; e.stopPropagation(); });
-            window.addEventListener('mousemove', handleMove);
-            window.addEventListener('mouseup', () => { activeThumb = null; });
+            t1.addEventListener('pointerdown', (e) => { activeThumb = t1; t1.setPointerCapture(e.pointerId); e.stopPropagation(); });
+            t2.addEventListener('pointerdown', (e) => { activeThumb = t2; t2.setPointerCapture(e.pointerId); e.stopPropagation(); });
+            window.addEventListener('pointermove', handleMove);
+            window.addEventListener('pointerup', (e) => { if(activeThumb) { activeThumb.releasePointerCapture(e.pointerId); activeThumb = null; }});
+
+            container.addEventListener('dblclick', () => {
+                if (state.currentIndex < 0) return;
+                state.images[state.currentIndex][prop1] = 0; state.images[state.currentIndex][prop2] = 100;
+                updateUI(); requestRender();
+            });
+
             return updateUI;
         }
 
@@ -648,14 +762,13 @@
         const updateTrimY = setupDualSlider('sliderTrimY', false, 'trimT', 'trimB', 'thumbTrimT', 'thumbTrimB');
 
         DOM.tabs.forEach(btn => btn.addEventListener('click', (e) => {
-            DOM.tabs.forEach(b => b.classList.remove('active'));
-            e.target.classList.add('active');
+            DOM.tabs.forEach(b => b.classList.remove('active')); e.target.classList.add('active');
             state.activeTab = e.target.dataset.tab;
             DOM.panels.forEach(p => p.classList.toggle('active', p.id === `tab-${state.activeTab}`));
             requestRender();
         }));
 
-        function bindInput(id, stateKey, parser, renderTrigger=true, labelId=null, format=v=>v) {
+        function bindInput(id, stateKey, parser, defaultVal, renderTrigger=true, labelId=null, format=v=>v) {
             const el = document.getElementById(id);
             el.addEventListener('input', (e) => {
                 if(state.currentIndex < 0) return;
@@ -664,41 +777,52 @@
                 if(stateKey === 'ratioW' || stateKey === 'ratioH') state.needsProxyWarpUpdate = true;
                 if(renderTrigger) requestRender();
             });
+            el.addEventListener('dblclick', () => {
+                if(state.currentIndex < 0 || defaultVal === null) return;
+                state.images[state.currentIndex][stateKey] = defaultVal; el.value = defaultVal;
+                if(labelId) document.getElementById(labelId).textContent = format(defaultVal);
+                if(stateKey === 'ratioW' || stateKey === 'ratioH') state.needsProxyWarpUpdate = true;
+                if(renderTrigger) requestRender();
+            });
             return () => {
                 if(state.currentIndex < 0) return;
-                const v = state.images[state.currentIndex][stateKey];
-                el.value = v;
+                const v = state.images[state.currentIndex][stateKey]; el.value = v;
                 if(labelId) document.getElementById(labelId).textContent = format(v);
             }
         }
 
-        const syncRatioW = bindInput('ratioW', 'ratioW', parseFloat);
-        const syncRatioH = bindInput('ratioH', 'ratioH', parseFloat);
-        const syncAngle = bindInput('sliderAngle', 'rotAngle', parseFloat, true, 'valAngle', v => `${v}°`);
-        const syncBp = bindInput('sliderBp', 'bp', parseInt, true, 'valBp');
-        const syncMid = bindInput('sliderMid', 'mid', parseInt, true, 'valMid', v => Math.pow(10, -v/100).toFixed(2));
-        const syncWp = bindInput('sliderWp', 'wp', parseInt, true, 'valWp');
+        const syncRatioW = bindInput('ratioW', 'ratioW', parseFloat, null);
+        const syncRatioH = bindInput('ratioH', 'ratioH', parseFloat, null);
+        const syncAngle = bindInput('sliderAngle', 'rotAngle', parseFloat, 0, true, 'valAngle', v => `${v}°`);
+        const syncBp = bindInput('sliderBp', 'bp', parseInt, 0, true, 'valBp');
+        const syncMid = bindInput('sliderMid', 'mid', parseInt, 0, true, 'valMid', v => Math.pow(10, -v/100).toFixed(2));
+        const syncWp = bindInput('sliderWp', 'wp', parseInt, 255, true, 'valWp');
+        const syncSat = bindInput('sliderSat', 'sat', parseInt, 0, true, 'valSat'); 
 
-        document.getElementById('sliderBrush').addEventListener('input', (e) => {
-            state.brushSizePct = parseFloat(e.target.value);
-            document.getElementById('valBrush').textContent = `${state.brushSizePct}%`;
-            requestRender();
+        document.querySelectorAll('input[name="sizingMode"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                if (state.currentIndex < 0) return;
+                const isAuto = e.target.value === 'auto';
+                state.images[state.currentIndex].autoSize = isAuto;
+                document.getElementById('customSizeInputs').classList.toggle('hidden', isAuto);
+                state.needsProxyWarpUpdate = true; requestRender();
+            });
         });
 
+        document.getElementById('sliderBrush').addEventListener('input', (e) => {
+            state.brushSizePct = parseFloat(e.target.value); document.getElementById('valBrush').textContent = `${state.brushSizePct}%`; requestRender();
+        });
+        document.getElementById('sliderBrush').addEventListener('dblclick', (e) => {
+            state.brushSizePct = 4; e.target.value = 4; document.getElementById('valBrush').textContent = `4%`; requestRender();
+        });
         document.getElementById('btnResetNodes').addEventListener('click', () => {
             if(state.currentIndex < 0) return;
             state.images[state.currentIndex].nodes = [{x:0, y:0}, {x:1, y:0}, {x:1, y:1}, {x:0, y:1}];
-            state.needsProxyWarpUpdate = true; requestRender();
+            state.images[state.currentIndex].nodesMoved = false; state.needsProxyWarpUpdate = true; requestRender();
         });
-        document.getElementById('btnRotL').addEventListener('click', () => {
-            if(state.currentIndex < 0) return; state.images[state.currentIndex].rot90 -= 90; requestRender();
-        });
-        document.getElementById('btnRotR').addEventListener('click', () => {
-            if(state.currentIndex < 0) return; state.images[state.currentIndex].rot90 += 90; requestRender();
-        });
-        document.getElementById('btnClearBrush').addEventListener('click', () => {
-            if(state.currentIndex < 0) return; state.images[state.currentIndex].brushStrokes = []; requestRender();
-        });
+        document.getElementById('btnRotL').addEventListener('click', () => { if(state.currentIndex >= 0) { state.images[state.currentIndex].rot90 -= 90; requestRender(); }});
+        document.getElementById('btnRotR').addEventListener('click', () => { if(state.currentIndex >= 0) { state.images[state.currentIndex].rot90 += 90; requestRender(); }});
+        document.getElementById('btnClearBrush').addEventListener('click', () => { if(state.currentIndex >= 0) { state.images[state.currentIndex].brushStrokes = []; requestRender(); }});
 
         function syncUI() {
             if(state.currentIndex < 0) {
@@ -715,9 +839,12 @@
             document.getElementById('filenameDisplay').textContent = img.name;
             document.getElementById('counter').textContent = `${state.currentIndex + 1} / ${state.images.length}`;
             
-            syncRatioW(); syncRatioH(); syncAngle(); syncBp(); syncMid(); syncWp();
-            updateTrimX(); updateTrimY();
-            requestRender();
+            const radio = document.querySelector(`input[name="sizingMode"][value="${img.autoSize ? 'auto' : 'custom'}"]`);
+            if (radio) radio.checked = true;
+            document.getElementById('customSizeInputs').classList.toggle('hidden', img.autoSize);
+            
+            syncRatioW(); syncRatioH(); syncAngle(); syncBp(); syncMid(); syncWp(); syncSat();
+            updateTrimX(); updateTrimY(); requestRender();
         }
 
         function renderThumbnails() {
@@ -726,7 +853,7 @@
             state.images.forEach((img, index) => {
                 const el = document.createElement('div');
                 el.className = `flex items-center gap-2 p-2 rounded cursor-pointer transition border ${state.currentIndex === index ? 'bg-neutral-800 border-neutral-600' : 'border-transparent hover:bg-neutral-800/50'}`;
-                el.onclick = () => { state.currentIndex = index; syncUI(); };
+                el.onclick = () => { state.currentIndex = index; syncUI(); if(window.innerWidth < 768) toggleQueue(); };
                 
                 const cvs = document.createElement('canvas');
                 cvs.width = 40; cvs.height = 40; cvs.className = "rounded bg-white object-cover shrink-0";
@@ -759,96 +886,128 @@
                 if (!files[i].type.startsWith('image/')) continue;
                 document.getElementById('procText').textContent = `Loading ${i+1}/${files.length}...`;
                 document.getElementById('procBar').style.width = `${((i)/files.length)*100}%`;
-                
-                await new Promise((resolve) => {
+                await new Promise(r => {
                     const img = new Image();
-                    img.onload = () => { state.images.push(createInitialState(files[i], img)); resolve(); };
+                    img.onload = () => { state.images.push(createInitialState(files[i], img)); r(); };
                     img.src = URL.createObjectURL(files[i]);
                 });
             }
             if (state.currentIndex === -1 && state.images.length > 0) state.currentIndex = 0;
             renderThumbnails(); syncUI();
             overlay.classList.add('opacity-0', 'pointer-events-none');
+            if(window.innerWidth < 768 && !qPanel.classList.contains('-translate-x-full')) toggleQueue();
         }
 
         document.getElementById('btnLoad').addEventListener('click', () => document.getElementById('fileInput').click());
         document.getElementById('fileInput').addEventListener('change', (e) => handleFiles(e.target.files));
+        
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(e => window.addEventListener(e, ev => ev.preventDefault()));
         window.addEventListener('dragover', () => document.getElementById('dragOverlay').classList.remove('opacity-0', 'pointer-events-none'));
         window.addEventListener('dragleave', (e) => { if(e.clientX===0 && e.clientY===0) document.getElementById('dragOverlay').classList.add('opacity-0', 'pointer-events-none'); });
         window.addEventListener('drop', (e) => { document.getElementById('dragOverlay').classList.add('opacity-0', 'pointer-events-none'); handleFiles(e.dataTransfer.files); });
 
-        async function processHighRes(imgState) {
+        const yieldThread = () => new Promise(r => setTimeout(r, 20));
+
+        async function processHighRes(imgState, exportTransparent) {
             const w = imgState.origW, h = imgState.origH;
-            
-            // 1. Homography Map to Target Aspect
-            const srcQuad = imgState.nodes.map(n => ({ x: n.x * w, y: n.y * h }));
-            const d1 = Math.hypot(srcQuad[0].x - srcQuad[1].x, srcQuad[0].y - srcQuad[1].y);
-            const d2 = Math.hypot(srcQuad[1].x - srcQuad[2].x, srcQuad[1].y - srcQuad[2].y);
-            const maxDim = Math.max(d1, d2);
-            
-            let outW, outH;
-            if (imgState.ratioW > imgState.ratioH) { outW = maxDim; outH = outW * (imgState.ratioH / imgState.ratioW); }
-            else { outH = maxDim; outW = outH * (imgState.ratioW / imgState.ratioH); }
-            outW = Math.max(1, Math.round(outW)); outH = Math.max(1, Math.round(outH));
+            let warpedData, outW, outH;
 
-            const dstRect = [{x:0, y:0}, {x:outW, y:0}, {x:outW, y:outH}, {x:0, y:outH}];
-            const H = getHomography(srcQuad, dstRect);
+            if (!imgState.nodesMoved) {
+                const origCvs = document.createElement('canvas'); origCvs.width = w; origCvs.height = h;
+                origCvs.getContext('2d').drawImage(imgState.originalImage, 0, 0);
+                warpedData = origCvs.getContext('2d').getImageData(0, 0, w, h);
+                outW = w; outH = h;
+                origCvs.width = 0; origCvs.height = 0; 
+            } else {
+                const srcQuad = imgState.nodes.map(n => ({ x: n.x * w, y: n.y * h }));
+                let outW_tmp, outH_tmp;
+                if (imgState.autoSize) {
+                    outW_tmp = Math.max(Math.hypot(srcQuad[0].x - srcQuad[1].x, srcQuad[0].y - srcQuad[1].y), Math.hypot(srcQuad[2].x - srcQuad[3].x, srcQuad[2].y - srcQuad[3].y));
+                    outH_tmp = Math.max(Math.hypot(srcQuad[1].x - srcQuad[2].x, srcQuad[1].y - srcQuad[2].y), Math.hypot(srcQuad[3].x - srcQuad[0].x, srcQuad[3].y - srcQuad[0].y));
+                } else {
+                    const maxDim = Math.max(Math.hypot(srcQuad[0].x - srcQuad[1].x, srcQuad[0].y - srcQuad[1].y), Math.hypot(srcQuad[1].x - srcQuad[2].x, srcQuad[1].y - srcQuad[2].y));
+                    if (imgState.ratioW > imgState.ratioH) { outW_tmp = maxDim; outH_tmp = outW_tmp * (imgState.ratioH / imgState.ratioW); }
+                    else { outH_tmp = maxDim; outW_tmp = outH_tmp * (imgState.ratioW / imgState.ratioH); }
+                }
+                outW = Math.max(1, Math.round(outW_tmp)); outH = Math.max(1, Math.round(outH_tmp));
+
+                const H = getHomography(srcQuad, [{x:0, y:0}, {x:outW, y:0}, {x:outW, y:outH}, {x:0, y:outH}]);
+                await yieldThread(); 
+
+                const origCvs = document.createElement('canvas'); origCvs.width = w; origCvs.height = h;
+                const oCtx = origCvs.getContext('2d'); oCtx.fillStyle = '#ffffff'; oCtx.fillRect(0,0,w,h); oCtx.drawImage(imgState.originalImage, 0, 0);
+                warpedData = applyWarp(oCtx.getImageData(0, 0, w, h), outW, outH, H);
+                origCvs.width = 0; origCvs.height = 0; 
+            }
             
-            const origCvs = document.createElement('canvas'); origCvs.width = w; origCvs.height = h;
-            const oCtx = origCvs.getContext('2d');
-            oCtx.fillStyle = '#ffffff'; oCtx.fillRect(0,0,w,h);
-            oCtx.drawImage(imgState.originalImage, 0, 0);
-            const srcData = oCtx.getImageData(0, 0, w, h);
+            await yieldThread(); 
+            const adjustedData = applyAdjustments(warpedData, imgState.bp, imgState.mid, imgState.wp, imgState.sat);
+            warpedData = null; 
             
-            // Render Warped
-            const warpedData = applyWarp(srcData, outW, outH, H);
-            
-            // Adjust Levels
-            const leveledData = applyLevels(warpedData, imgState.bp, imgState.mid, imgState.wp);
             const warpedCvs = document.createElement('canvas'); warpedCvs.width = outW; warpedCvs.height = outH;
-            warpedCvs.getContext('2d').putImageData(leveledData, 0, 0);
+            warpedCvs.getContext('2d').putImageData(adjustedData, 0, 0);
 
-            // 2. Setup Full Rotation Workspace
+            await yieldThread(); 
+
             const totalAngle = imgState.rot90 + imgState.rotAngle;
             const wsBounds = calculateRotatedBounds(outW, outH, totalAngle);
             const wsW = wsBounds.w, wsH = wsBounds.h;
             
             const wsCvs = document.createElement('canvas'); wsCvs.width = wsW; wsCvs.height = wsH;
             const wsCtx = wsCvs.getContext('2d');
-            
-            // CRITICAL: Fill with pure white to prevent black clipping
-            wsCtx.fillStyle = '#ffffff';
-            wsCtx.fillRect(0, 0, wsW, wsH);
-            
-            wsCtx.translate(wsW/2, wsH/2);
-            wsCtx.rotate(totalAngle * Math.PI / 180);
-            wsCtx.drawImage(warpedCvs, -outW/2, -outH/2);
-            wsCtx.resetTransform();
+            wsCtx.fillStyle = '#ffffff'; wsCtx.fillRect(0, 0, wsW, wsH);
+            wsCtx.translate(wsW/2, wsH/2); wsCtx.rotate(totalAngle * Math.PI / 180); wsCtx.drawImage(warpedCvs, -outW/2, -outH/2); wsCtx.resetTransform();
+            warpedCvs.width = 0; warpedCvs.height = 0; 
 
-            // Brush Paint via Normalized Coords
             wsCtx.lineCap = 'round'; wsCtx.lineJoin = 'round'; wsCtx.strokeStyle = '#ffffff';
             imgState.brushStrokes.forEach(stroke => {
                 if (stroke.pts.length === 0) return;
-                wsCtx.lineWidth = (stroke.normSize / 100) * wsW;
-                wsCtx.beginPath();
-                wsCtx.moveTo(stroke.pts[0].nx * wsW, stroke.pts[0].ny * wsH);
-                for(let i=1; i<stroke.pts.length; i++) {
-                    wsCtx.lineTo(stroke.pts[i].nx * wsW, stroke.pts[i].ny * wsH);
-                }
+                wsCtx.lineWidth = (stroke.normSize / 100) * wsW; wsCtx.beginPath(); wsCtx.moveTo(stroke.pts[0].nx * wsW, stroke.pts[0].ny * wsH);
+                for(let i=1; i<stroke.pts.length; i++) wsCtx.lineTo(stroke.pts[i].nx * wsW, stroke.pts[i].ny * wsH);
                 wsCtx.stroke();
             });
 
-            // 3. Final Trim
-            const tx = Math.round(wsW * (imgState.trimL / 100));
-            const ty = Math.round(wsH * (imgState.trimT / 100));
-            const tw = Math.round(wsW * ((imgState.trimR - imgState.trimL) / 100));
-            const th = Math.round(wsH * ((imgState.trimB - imgState.trimT) / 100));
+            await yieldThread(); 
+
+            const tx = Math.round(wsW * (imgState.trimL / 100)), ty = Math.round(wsH * (imgState.trimT / 100));
+            const tw = Math.round(wsW * ((imgState.trimR - imgState.trimL) / 100)), th = Math.round(wsH * ((imgState.trimB - imgState.trimT) / 100));
             
             const finalCvs = document.createElement('canvas'); finalCvs.width = tw; finalCvs.height = th;
-            finalCvs.getContext('2d').drawImage(wsCvs, tx, ty, tw, th, 0, 0, tw, th);
+            const finalCtx = finalCvs.getContext('2d');
+            finalCtx.drawImage(wsCvs, tx, ty, tw, th, 0, 0, tw, th);
+            wsCvs.width = 0; wsCvs.height = 0; 
 
-            return new Promise(res => finalCvs.toBlob(res, 'image/jpeg', 0.98));
+            if (exportTransparent) {
+                await yieldThread(); 
+                const imgData = finalCtx.getImageData(0, 0, tw, th);
+                const data = imgData.data;
+                // CRITICAL MATH FIX: Precise unpremultiplication to restore color saturation
+                for (let i = 0; i < data.length; i += 4) {
+                    const r = data[i], g = data[i+1], b = data[i+2];
+                    const minColor = Math.min(r, g, b);
+                    const alpha = 255 - minColor;
+                    
+                    if (alpha === 0) {
+                        data[i+3] = 0;
+                    } else {
+                        const aNorm = alpha / 255;
+                        data[i] = Math.max(0, Math.min(255, (r - 255 + alpha) / aNorm));
+                        data[i+1] = Math.max(0, Math.min(255, (g - 255 + alpha) / aNorm));
+                        data[i+2] = Math.max(0, Math.min(255, (b - 255 + alpha) / aNorm));
+                        data[i+3] = alpha;
+                    }
+                }
+                finalCtx.putImageData(imgData, 0, 0);
+            }
+
+            await yieldThread(); 
+
+            return new Promise(res => {
+                finalCvs.toBlob((blob) => {
+                    finalCvs.width = 0; finalCvs.height = 0; 
+                    res(blob);
+                }, exportTransparent ? 'image/png' : 'image/jpeg', 0.98);
+            });
         }
 
         document.getElementById('btnExport').addEventListener('click', async () => {
@@ -856,38 +1015,46 @@
             const overlay = document.getElementById('processingOverlay');
             overlay.classList.remove('opacity-0', 'pointer-events-none');
             
+            const isTransparent = document.getElementById('chkTransparent').checked;
+            const ext = isTransparent ? 'png' : 'jpg';
+
             if (state.images.length === 1) {
-                // Single file export -> direct JPG download
                 document.getElementById('procText').textContent = `Exporting image...`;
                 document.getElementById('procBar').style.width = `50%`;
-                await new Promise(r => setTimeout(r, 50)); 
+                await yieldThread();
                 
-                const blob = await processHighRes(state.images[0]);
+                const blob = await processHighRes(state.images[0], isTransparent);
                 const a = document.createElement("a");
                 a.href = URL.createObjectURL(blob); 
-                a.download = `${state.images[0].name.replace(/\.[^/.]+$/, "")}_processed.jpg`;
-                a.click(); URL.revokeObjectURL(a.href);
+                a.download = `${state.images[0].name.replace(/\.[^/.]+$/, "")}_processed.${ext}`;
+                a.click(); 
+                setTimeout(() => URL.revokeObjectURL(a.href), 1000);
                 
             } else {
-                // Multiple files -> ZIP
                 const zip = new JSZip();
                 for (let i = 0; i < state.images.length; i++) {
                     document.getElementById('procText').textContent = `Exporting ${i + 1}/${state.images.length}`;
                     document.getElementById('procBar').style.width = `${(i / state.images.length) * 100}%`;
-                    await new Promise(r => setTimeout(r, 50));
+                    await yieldThread();
                     
-                    const blob = await processHighRes(state.images[i]);
-                    zip.file(`${state.images[i].name.replace(/\.[^/.]+$/, "")}_processed.jpg`, blob);
+                    const blob = await processHighRes(state.images[i], isTransparent);
+                    zip.file(`${state.images[i].name.replace(/\.[^/.]+$/, "")}_processed.${ext}`, blob);
+                    await yieldThread(); 
                 }
                 
-                document.getElementById('procText').textContent = "Zipping...";
+                document.getElementById('procText').textContent = "Zipping... (Do not close tab)";
                 document.getElementById('procBar').style.width = `100%`;
-                const content = await zip.generateAsync({ type: "blob" });
+                await yieldThread();
+
+                const content = await zip.generateAsync({ type: "blob" }, function(metadata) {
+                    document.getElementById('procText').textContent = `Compressing: ${Math.round(metadata.percent)}%`;
+                });
+                
                 const a = document.createElement("a");
                 a.href = URL.createObjectURL(content); a.download = "Processed_Sketches.zip";
-                a.click(); URL.revokeObjectURL(a.href);
+                a.click(); 
+                setTimeout(() => URL.revokeObjectURL(a.href), 1000);
             }
-            
             overlay.classList.add('opacity-0', 'pointer-events-none');
         });
 
